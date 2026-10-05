@@ -1,17 +1,10 @@
 const KEY = import.meta.env.VITE_GEMINI_API_KEY;
-
-// Backup models list: If one model is busy or fails, the next one is used automatically
-const MODELS = [
-  import.meta.env.VITE_GEMINI_MODEL,
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-8b',
-  'gemini-2.0-flash'
-].filter(Boolean);
+const MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.8-flash';
 
 export const hasGemini = !!KEY;
 
-const getUrl = (model) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`;
+const url = () =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
 
 export function fileToPart(file, maxSide = 1024) {
   return new Promise((resolve, reject) => {
@@ -49,31 +42,18 @@ async function call(body) {
     throw new Error('Gemini API key missing. Add VITE_GEMINI_API_KEY in .env and restart npm run dev.');
   }
 
-  let lastError = null;
+  const res = await fetch(url(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
 
-  for (const model of MODELS) {
-    try {
-      const res = await fetch(getUrl(model), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      const j = await res.json();
-
-      if (!res.ok) {
-        throw new Error(j.error?.message || `Request failed on ${model}`);
-      }
-
-      const text = j.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-      if (text) return text;
-    } catch (err) {
-      lastError = err;
-      continue;
-    }
+  const j = await res.json();
+  if (!res.ok) {
+    throw new Error(j.error?.message || 'Gemini request failed');
   }
 
-  throw lastError || new Error('All AI models are currently busy. Please try again shortly.');
+  return j.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
 }
 
 export const chat = (contents, system) =>
